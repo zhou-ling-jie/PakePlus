@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>溯元数据 - 记账系统</title>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
+<style>
+*{box-sizing:border-box;font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;margin:0;padding:0}
+body{padding:20px;background:#f0f4f8;color:#1e293b;max-width:1240px;margin:0 auto}
+
+.tabs{display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap}
+.tab{padding:11px 20px;background:#e2e8f0;border:none;border-radius:10px;cursor:pointer;font-size:15px;transition:0.2s all}
+.tab:hover{background:#cbd5e1}
+.tab.active{background:#2563eb;color:#fff;box-shadow:0 2px 6px #2563eb40}
+
+.page{display:none}
+.page.show{display:block}
+
+.card{background:#ffffff;border-radius:14px;padding:22px;margin-bottom:20px;box-shadow:0 4px 14px rgba(0,0,0,0.06);border:1px solid #f1f5f9}
+.card h3{margin-bottom:16px;font-size:17px;color:#0f172a;display:flex;align-items:center;gap:6px}
+
+.form-row{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;align-items:center}
+label{font-size:14px;color:#475569}
+input,select,textarea{padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;min-width:130px;transition:0.2s;border-color:#cbd5e1}
+input:focus,select:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px #2563eb20}
+
+.btn{padding:10px 16px;border:none;border-radius:9px;color:#fff;cursor:pointer;font-size:14px;transition:0.2s;box-shadow:0 2px 4px rgba(0,0,0,0.08)}
+.btn:hover{opacity:0.92;transform:translateY(-1px)}
+.btn.blue{background:#2563eb}
+.btn.green{background:#10b981}
+.btn.red{background:#ef4444}
+.btn.orange{background:#f97316}
+.btn.gray{background:#64748b}
+
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:10px}
+.stat-card{padding:18px;border-radius:12px}
+.stat-card.income{background:#ecfdf5;border:1px solid #a7f3d0}
+.stat-card.exp{background:#fef2f2;border:1px solid #fecdd3}
+.stat-card.bal{background:#eff6ff;border:1px solid #bfdbfe}
+.stat-label{font-size:14px;color:#475569;margin-bottom:4px}
+.stat-value{font-size:24px;font-weight:bold}
+.income-text{color:#059669}
+.exp-text{color:#dc2626}
+
+table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+th,td{border:1px solid #e2e8f0;padding:11px;text-align:center}
+th{background:#f8fafc;font-weight:500;color:#334155}
+
+.row-check{width:18px;height:18px}
+
+.voucher-wrap{margin-top:8px}
+.voucher-head{text-align:center;margin-bottom:14px}
+.voucher-title{font-size:26px;font-weight:bold;letter-spacing:6px;margin-bottom:10px}
+.voucher-meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:14px;color:#334155}
+.voucher-table{width:100%;border-collapse:collapse;margin:12px 0}
+.voucher-table th,.voucher-table td{border:1px solid #1e293b;padding:9px;font-size:14px}
+.voucher-table input,.voucher-table select{width:100%;border:none;background:transparent;padding:4px 6px;font-size:14px}
+.voucher-footer{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:14px;font-size:14px}
+.voucher-footer input{width:86px;border:1px solid #cbd5e1;padding:4px}
+.row-del{color:#ef4444;cursor:pointer;font-weight:bold}
+.total-row{font-weight:bold;}
+.rmb{color:#c00;}
+
+.v-filter-row{background:#f8fafc;padding:14px;border-radius:10px;margin-bottom:16px}
+.edit-mark{color:#f97316;font-weight:bold}
+.recycle-tip{color:#dc2626;font-weight:bold}
+
+.modal{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:none;align-items:center;justify-content:center;z-index:100}
+.modal.open{display:flex}
+.modal-content{background:#fff;border-radius:14px;padding:24px;width:94%;max-width:780px;max-height:92vh;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,0.15)}
+
+.img-modal{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:none;align-items:center;justify-content:center;z-index:200}
+.img-modal.open{display:flex}
+.img-modal img{max-width:90%;max-height:90%;border-radius:8px}
+.img-close{position:absolute;top:20px;right:30px;color:#fff;font-size:32px;cursor:pointer}
+
+@media print{
+  @page {size:A4;margin:15mm;}
+  body{background:#fff;padding:0;}
+  .tabs,.btn,.v-filter-row,.row-del,.row-check,.card{display:none !important;}
+  .voucher-wrap{display:block !important;}
+}
+
+.set-item{display:flex;gap:8px;align-items:center;padding:6px 0}
+.mapping-table th,.mapping-table td{padding:8px;font-size:13px}
+</style>
+</head>
+<body>
+<div class="tabs">
+  <button class="tab active" data-page="stat">📊 统计看板</button>
+  <button class="tab" data-page="flow">💵 收支流水</button>
+  <button class="tab" data-page="voucher">📒 记账凭证</button>
+  <button class="tab" data-page="recycle">🗑️凭证回收站</button>
+  <button class="tab" data-page="setting">⚙️ 基础设置</button>
+</div>
+
+<div id="stat" class="page show">
+  <div class="card">
+    <h3>📊 汇总统计</h3>
+    <div id="statBox" class="stat-grid"></div>
+  </div>
+</div>
+
+<div id="flow" class="page">
+  <div class="card">
+    <h3>➕ 新增流水</h3>
+    <div class="form-row">
+      <label>日期</label><input type="date" id="fDate">
+      <label>类型</label>
+      <select id="fType">
+        <option value="收入">收入</option>
+        <option value="支出">支出</option>
+      </select>
+      <label>金额</label><input type="number" id="fAmt" step="0.01" placeholder="0.00">
+    </div>
+    <div class="form-row">
+      <label>分类</label><select id="fCate"></select>
+      <label>项目</label><select id="fProj"></select>
+    </div>
+    <div class="form-row">
+      <label>备注</label><input type="text" id="fNote" placeholder="备注信息">
+      <label>票据</label><input type="file" id="fImg" accept="image/*">
+    </div>
+    <button class="btn green" onclick="saveFlow()">保存流水</button>
+  </div>
+  <div class="card">
+    <h3>📋 流水明细</h3>
+    <div class="form-row">
+      <input type="month" id="filterMonth">
+      <input type="text" id="searchTxt" placeholder="搜索备注/项目">
+      <button class="btn gray" onclick="renderFlow()">筛选</button>
+      <button class="btn orange" onclick="genVoucherFromSelected()">选中流水生成凭证</button>
+      <button class="btn orange" onclick="exportSelectedFlowCsv()">批量导出选中流水</button>
+      <button class="btn red" onclick="batchDeleteFlow()">批量删除选中流水</button>
+      <button class="btn gray" onclick="exportCSV()">导出全部CSV</button>
+      <button class="btn gray" onclick="document.getElementById('importFile').click()">导入CSV</button>
+      <input type="file" id="importFile" accept=".csv" style="display:none" onchange="importCSV(this)">
+    </div>
+    <div id="flowList"></div>
+  </div>
+</div>
+
+<div id="voucher" class="page">
+  <div class="card">
+    <div class="voucher-wrap" id="voucherPrintWrap">
+      <div class="voucher-head">
+        <div class="voucher-title">记 账 凭 证</div>
+        <div><span id="editHint"></span></div>
+        <div class="voucher-meta">
+          <span>日期：<input type="date" id="vDate"></span>
+          <span>字第 <input style="width:60px" type="number" id="vNo" value="1"> 号</span>
+        </div>
+      </div>
+      <table class="voucher-table" id="vTable">
+        <thead>
+          <tr>
+            <th>摘要</th>
+            <th>总账科目</th>
+            <th>明细科目</th>
+            <th>借方金额</th>
+            <th>贷方金额</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="vBody"></tbody>
+        <tfoot>
+          <tr class="total-row">
+            <td colspan="3">合计</td>
+            <td><span class="rmb">¥</span><span id="sumDebit">0.00</span></td>
+            <td><span class="rmb">¥</span><span id="sumCredit">0.00</span></td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="voucher-footer">
+        <span>会计主管：<input></span>
+        <span>记账：<input></span>
+        <span>出纳：<input></span>
+        <span>复核：<input></span>
+        <span>制单：<input></span>
+        <span>附单据 <input style="width:45px" type="number" id="attachCount" value="0"> 张</span>
+      </div>
+    </div>
+    <div class="form-row" style="margin-top:16px">
+      <button class="btn blue" onclick="addVoucherRow()">+ 添加分录行</button>
+      <button class="btn green" onclick="saveVoucher()">保存凭证</button>
+      <button class="btn gray" onclick="printVoucher()">🖨打印凭证</button>
+      <button class="btn gray" onclick="exportVoucherCsv()">导出全部凭证CSV(Excel)</button>
+      <button class="btn red" onclick="clearVoucher()">清空编辑区</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>📖 已保存凭证列表</h3>
+    <div class="v-filter-row form-row">
+      <label>凭证号搜索</label>
+      <input type="text" id="vSearchNo" placeholder="输入凭证号">
+      <label>日期起</label>
+      <input type="date" id="vStartDate">
+      <label>日期止</label>
+      <input type="date" id="vEndDate">
+      <button class="btn blue" onclick="filterVoucherList()">查询</button>
+      <button class="btn gray" onclick="resetVoucherFilter()">重置</button>
+      <button class="btn orange" onclick="batchPrintSelectedVoucher()">🖨批量打印选中凭证</button>
+    </div>
+    <div id="voucherList"></div>
+  </div>
+</div>
+
+<div id="recycle" class="page">
+  <div class="card">
+    <h3>🗑️凭证回收站 <span class="recycle-tip">删除的凭证会进入此处，可以恢复或彻底销毁</span></h3>
+    <div class="form-row">
+      <button class="btn red" onclick="emptyRecycleBin()">彻底清空回收站（不可恢复）</button>
+    </div>
+    <div id="recycleList"></div>
+  </div>
+</div>
+
+<div id="setting" class="page">
+  <div class="card">
+    <h3>📁 项目管理</h3>
+    <div class="form-row">
+      <input id="newProj" placeholder="新增项目名称">
+      <button class="btn blue" onclick="addProj()">添加</button>
+    </div>
+    <div id="projBox"></div>
+  </div>
+  <div class="card">
+    <h3>🏷️ 收支分类管理</h3>
+    <div class="form-row">
+      <input id="newCate" placeholder="新增分类名称">
+      <button class="btn blue" onclick="addCate()">添加</button>
+    </div>
+    <div id="cateBox"></div>
+  </div>
+  <div class="card">
+    <h3>📚 会计科目（凭证）</h3>
+    <div class="form-row">
+      <input id="newSubj" placeholder="总账科目，如1122应收账款">
+      <button class="btn blue" onclick="addSubject()">添加总账科目</button>
+    </div>
+    <div id="subjBox"></div>
+  </div>
+  <div class="card">
+    <h3>🔗 分类-会计科目映射（生成凭证自动匹配）</h3>
+    <div class="form-row">
+      <select id="mapCateSel"></select>
+      <select id="mapDebitSubj"></select>
+      <select id="mapCreditSubj"></select>
+      <button class="btn blue" onclick="addMapping()">新增映射规则</button>
+    </div>
+    <div id="mappingBox"></div>
+  </div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-content" id="modalBody"></div>
+</div>
+<div class="img-modal" id="imgModal">
+  <span class="img-close" onclick="closeImgModal()">×</span>
+  <img id="previewImg">
+</div>
+
+<script>
+let book = JSON.parse(localStorage.getItem("book")) || [];
+book = book.map(x=>{x.amt = Number(x.amt);if(isNaN(x.amt)) x.amt = 0;return x;}).filter(x=>x.amt>0);
+
+let projList = JSON.parse(localStorage.getItem("projList")) || ["无项目","项目A-具身智能","项目B-数据服务","日常行政","对公基础"];
+let cateList = JSON.parse(localStorage.getItem("cateList")) || ["对公收款","服务费收入","办公耗材","房租场地","银行手续费","差旅费","设备采购","其他"];
+let subjectList = JSON.parse(localStorage.getItem("subjectList")) || ["1122-应收账款","6051-其他业务收入","2221-应交税费","6602-管理费用","1001-库存现金","1002-银行存款"];
+let voucherBook = JSON.parse(localStorage.getItem("voucherBook")) || [];
+let voucherRecycleBin = JSON.parse(localStorage.getItem("voucherRecycleBin")) || [];
+
+let cateSubjectMapping = JSON.parse(localStorage.getItem("cateSubjectMapping")) || [
+  {cate:"对公收款",debit:"1122-应收账款",credit:"6051-其他业务收入"},
+  {cate:"服务费收入",debit:"1122-应收账款",credit:"6051-其他业务收入"},
+  {cate:"办公耗材",debit:"6602-管理费用",credit:"1002-银行存款"},
+  {cate:"房租场地",debit:"6602-管理费用",credit:"1002-银行存款"},
+  {cate:"银行手续费",debit:"6602-管理费用",credit:"1002-银行存款"},
+  {cate:"差旅费",debit:"6602-管理费用",credit:"1002-银行存款"},
+  {cate:"设备采购",debit:"6602-管理费用",credit:"1002-银行存款"},
+  {cate:"其他",debit:"6602-管理费用",credit:"1002-银行存款"}
+];
+let editVid = null;
+
+function openImgModal(base64){document.getElementById("previewImg").src = base64;document.getElementById("imgModal").classList.add("open");}
+function closeImgModal(){document.getElementById("imgModal").classList.remove("open");}
+
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll(".page").forEach(x=>x.classList.remove("show"));
+  t.classList.add("active");
+  document.getElementById(t.dataset.page).classList.add("show");
+  if(t.dataset.page==="stat")renderStat();
+  if(t.dataset.page==="flow")renderFlow();
+  if(t.dataset.page==="voucher"){initVoucher();renderVoucherList();calcVoucherSum();autoNextVoucherNo();}
+  if(t.dataset.page==="recycle")renderRecycleBin();
+  if(t.dataset.page==="setting")renderSetting();
+})
+
+function getNextVoucherNo(){if(voucherBook.length===0) return 1;const max = Math.max(...voucherBook.map(v=>Number(v.no)||0));return max + 1;}
+function autoNextVoucherNo(){if(editVid===null){document.getElementById("vNo").value = getNextVoucherNo();}}
+
+//流水
+function saveFlow(){
+  const amtVal = Number(document.getElementById("fAmt").value);
+  if(isNaN(amtVal) || amtVal <=0){alert("⚠️金额必须是大于0的数字！");return;}
+  const o={date:document.getElementById("fDate").value,type:document.getElementById("fType").value,amt:amtVal,cate:document.getElementById("fCate").value,proj:document.getElementById("fProj").value,note:document.getElementById("fNote").value.trim(),img:""}
+  const file=document.getElementById("fImg").files[0];
+  if(file){
+    const r=new FileReader();
+    r.onload=e=>{o.img=e.target.result;book.push(o);saveBook();renderFlow();renderStat();alert("✅保存完毕");}
+    r.readAsDataURL(file);
+  }else{
+    book.push(o);saveBook();renderFlow();renderStat();alert("✅保存完毕");
+  }
+}
+function saveBook(){localStorage.setItem("book",JSON.stringify(book))}
+
+function renderStat(){
+  let inc=0,exp=0;book.forEach(x=>{const a = Number(x.amt)||0;if(x.type==="收入")inc+=a;else exp+=a;})
+  const bal=inc-exp;
+  document.getElementById("statBox").innerHTML=`
+    <div class="stat-card income"><div class="stat-label">总收入</div><div class="stat-value income-text">${inc.toFixed(2)}</div></div>
+    <div class="stat-card exp"><div class="stat-label">总支出</div><div class="stat-value exp-text">${exp.toFixed(2)}</div></div>
+    <div class="stat-card bal"><div class="stat-label">结余</div><div class="stat-value">${bal.toFixed(2)}</div></div>
+  `
+}
+
+function renderFlow(){
+  renderSelect();let list=[...book];
+  const m=document.getElementById("filterMonth").value;const s=document.getElementById("searchTxt").value.trim().toLowerCase();
+  if(m)list=list.filter(x=>x.date.startsWith(m));
+  if(s)list=list.filter(x=>(x.note||'').toLowerCase().includes(s)||(x.proj||'').toLowerCase().includes(s)||(x.cate||'').toLowerCase().includes(s))
+  let html="<table><tr><th><input class='row-check' id='checkAllFlow' type='checkbox' onchange='toggleCheckAllFlow(this)'>全选</th><th>日期</th><th>类型</th><th>金额</th><th>分类</th><th>项目</th><th>备注</th><th>票据</th><th>操作</th></tr>";
+  list.forEach((item,i)=>{
+    html+=`<tr>
+    <td><input class="row-check flow-check" type="checkbox" data-idx="${i}"></td>
+    <td>${item.date||''}</td>
+    <td class="${item.type==='收入'?'income-text':'exp-text'}">${item.type}</td>
+    <td>${Number(item.amt).toFixed(2)}</td>
+    <td>${item.cate}</td>
+    <td>${item.proj}</td>
+    <td>${item.note}</td>
+    <td>${item.img?`<button class="btn blue" onclick="openImgModal('${item.img}')">查看票据</button>`:'—'}</td>
+    <td><button class="btn red" onclick="delFlow(${i})">删除</button></td>
+    </tr>`
+  })
+  html+="</table>";document.getElementById("flowList").innerHTML=html;
+}
+function toggleCheckAllFlow(el){document.querySelectorAll(".flow-check").forEach(cb=>cb.checked = el.checked);}
+function batchDeleteFlow(){
+  const checked = Array.from(document.querySelectorAll(".flow-check:checked"));
+  if(checked.length === 0){alert("请先勾选要删除的流水！");return;}
+  if(!confirm(`确定批量删除选中 ${checked.length} 条流水？无法恢复！`)) return;
+  const idxList = checked.map(x=>Number(x.dataset.idx)).sort((a,b)=>b-a);
+  idxList.forEach(i=>book.splice(i,1));saveBook();renderFlow();renderStat();alert("✅批量删除完成");
+}
+function exportSelectedFlowCsv(){
+  const checked = Array.from(document.querySelectorAll(".flow-check:checked"));
+  if(checked.length===0){alert("请勾选需要导出的流水记录！");return;}
+  let csv="日期,类型,金额,分类,项目,备注\n";
+  checked.forEach(cb=>{const idx=Number(cb.dataset.idx);const r=book[idx];csv+=`${r.date},${r.type},${r.amt},${r.cate},${r.proj},"${r.note||''}"\n`;})
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="选中流水_导出.csv";a.click();
+}
+function delFlow(idx){if(!confirm("⚠️确认删除这条流水记录？")) return;book.splice(idx,1);saveBook();renderFlow();renderStat()}
+function renderSelect(){document.getElementById("fCate").innerHTML=cateList.map(x=>`<option>${x}</option>`).join("");document.getElementById("fProj").innerHTML=projList.map(x=>`<option>${x}</option>`).join("");}
+function exportCSV(){let csv="日期,类型,金额,分类,项目,备注\n";book.forEach(x=>csv+=`${x.date},${x.type},${x.amt},${x.cate},${x.proj},"${x.note||''}"\n`);const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="记账流水.csv";a.click();}
+function importCSV(el){
+  const r=new FileReader();
+  r.onload=e=>{
+    const rows=e.target.result.split("\n");
+    for(let i=1;i<rows.length;i++){
+      const d=rows[i].split(",");
+      if(d.length>=6){const na=Number(d[2]);if(!isNaN(na) && na>0){book.push({date:d[0],type:d[1],amt:na,cate:d[3],proj:d[4],note:d[5]||"",img:""})}}
+    }
+    saveBook();renderFlow();renderStat();
+  }
+  r.readAsText(el.files[0]);
+}
+
+function genVoucherFromSelected(){
+  const checkedBoxes = document.querySelectorAll(".flow-check:checked");
+  if(checkedBoxes.length===0){alert("请勾选至少一条流水记录！");return;}
+  const tb=document.getElementById("vBody");tb.innerHTML='';editVid=null;document.getElementById("editHint").innerText="";
+  checkedBoxes.forEach(cb=>{
+    const idx = Number(cb.dataset.idx);const row = book[idx];
+    const mapRule = cateSubjectMapping.find(m=>m.cate === row.cate);
+    const debitSubj = mapRule ? mapRule.debit : "";const creditSubj = mapRule ? mapRule.credit : "";
+    addVoucherRow();
+    const tr = document.querySelector("#vBody tr:last-child");
+    tr.querySelector(".v-sum").value = `${row.proj} ${row.note}`;
+    tr.querySelector(".v-subj").value = debitSubj;
+    tr.querySelector(".v-detail").value = row.proj;
+    tr.querySelector(".v-debit").value = row.amt;
+
+    addVoucherRow();
+    const tr2 = document.querySelector("#vBody tr:last-child");
+    tr2.querySelector(".v-sum").value = `${row.proj} ${row.note}`;
+    tr2.querySelector(".v-subj").value = creditSubj;
+    tr2.querySelector(".v-detail").value = row.proj;
+    tr2.querySelector(".v-credit").value = row.amt;
+  })
+  calcVoucherSum();document.getElementById("vDate").value = book[Number(checkedBoxes[0].dataset.idx)].date;
+  document.querySelector('[data-page="voucher"]').click();alert(`✅已按【分类-科目映射】自动生成分录，请核对科目后保存凭证！`);
+}
+
+function initVoucher(){const tb=document.getElementById("vBody");if(tb.children.length===0){ addVoucherRow();addVoucherRow(); }}
+function addVoucherRow(){
+  const tb=document.getElementById("vBody");
+  const tr=document.createElement("tr");
+  tr.innerHTML=`
+  <td><input type="text" class="v-sum" placeholder="摘要"></td>
+  <td><select class="v-subj">${subjectList.map(s=>`<option>${s}</option>`).join("")}</select></td>
+  <td><input type="text" class="v-detail" placeholder="明细科目"></td>
+  <td><input type="number" step="0.01" class="v-debit" oninput="calcVoucherSum()"></td>
+  <td><input type="number" step="0.01" class="v-credit" oninput="calcVoucherSum()"></td>
+  <td><span class="row-del" onclick="this.parentElement.parentElement.remove();calcVoucherSum()">×</span></td>
+  `;
+  tb.appendChild(tr);
+}
+function calcVoucherSum(){
+  let d=0,c=0;
+  document.querySelectorAll(".v-debit").forEach(el=>d+=Number(el.value||0));
+  document.querySelectorAll(".v-credit").forEach(el=>c+=Number(el.value||0));
+  document.getElementById("sumDebit").innerText=d.toFixed(2);
+  document.getElementById("sumCredit").innerText=c.toFixed(2);
+}
+
+function saveVoucher(){
+  const rows=[];
+  document.querySelectorAll("#vBody tr").forEach(tr=>{
+    rows.push({
+      summary:tr.querySelector(".v-sum").value,
+      subject:tr.querySelector(".v-subj").value,
+      detail:tr.querySelector(".v-detail").value,
+      debit:Number(tr.querySelector(".v-debit").value||0),
+      credit:Number(tr.querySelector(".v-credit").value||0)
+    })
+  })
+  const d=Number(document.getElementById("sumDebit").innerText);
+  const c=Number(document.getElementById("sumCredit").innerText);
+  if(Math.abs(d-c)>0.01){alert("⚠️借贷不平衡！借方合计≠贷方合计");return}
+  const vData={date:document.getElementById("vDate").value,no:document.getElementById("vNo").value,attach:document.getElementById("attachCount").value,lines:rows}
+  if(editVid !== null){
+    if(!confirm("⚠️正在编辑已有凭证，确认覆盖保存？")) return;
+    const idx = voucherBook.findIndex(x=>x.vid === editVid);
+    if(idx >=0){voucherBook[idx] = {...vData, vid:editVid};alert("✅凭证修改保存成功！");}
+  }else{
+    if(!confirm("确认新建保存这条凭证？")) return;
+    voucherBook.push({...vData, vid:Date.now()});alert("✅凭证新建保存成功！");
+  }
+  localStorage.setItem("voucherBook",JSON.stringify(voucherBook));clearVoucher();renderVoucherList();
+}
+
+function filterVoucherList(){
+  const kwNo=document.getElementById("vSearchNo").value.trim();const sDate=document.getElementById("vStartDate").value;const eDate=document.getElementById("vEndDate").value;
+  let list=[...voucherBook];
+  if(kwNo) list=list.filter(x=>String(x.no).includes(kwNo));
+  if(sDate) list=list.filter(x=>x.date>=sDate);
+  if(eDate) list=list.filter(x=>x.date<=eDate);
+  renderVoucherList(list);
+}
+function resetVoucherFilter(){document.getElementById("vSearchNo").value='';document.getElementById("vStartDate").value='';document.getElementById("vEndDate").value='';renderVoucherList();}
+
+function renderVoucherList(sourceList=null){
+  const list=sourceList||voucherBook;
+  let html="<table><tr><th><input class='row-check' id='checkAllVoucher' type='checkbox' onchange='toggleCheckAllVoucher(this)'>全选</th><th>凭证号</th><th>日期</th><th>分录行数</th><th>借方总额</th><th>贷方总额</th><th>操作</th></tr>";
+  list.forEach(v=>{
+    let sumD=0,sumC=0;v.lines.forEach(l=>{sumD+=l.debit;sumC+=l.credit})
+    html+=`<tr>
+    <td><input class="row-check voucher-check" type="checkbox" data-vid="${v.vid}"></td>
+    <td>${v.no}</td><td>${v.date||''}</td><td>${v.lines.length}</td>
+    <td>${sumD.toFixed(2)}</td><td>${sumC.toFixed(2)}</td>
+    <td>
+        <button class="btn gray" onclick="loadVoucherToEdit(${v.vid})">载入编辑区</button>
+        <button class="btn blue" onclick="exportSingleVoucherCsv(${v.vid})">导出CSV</button>
+        <button class="btn orange" onclick="downloadVoucherPng(${v.vid})">下载PNG图片</button>
+        <button class="btn red" onclick="softDelVoucher(${v.vid})">删除(移入回收站)</button>
+    </td>
+    </tr>`
+  })
+  html+="</table>";document.getElementById("voucherList").innerHTML=html;
+}
+function toggleCheckAllVoucher(el){document.querySelectorAll(".voucher-check").forEach(cb=>cb.checked = el.checked);}
+
+//单条凭证导出CSV
+function exportSingleVoucherCsv(vid){
+  const v = voucherBook.find(x=>x.vid === vid);
+  if(!v) return;
+  let csv="凭证号,凭证日期,附单据,摘要,总账科目,明细科目,借方金额,贷方金额\n";
+  v.lines.forEach(line=>{
+    csv+=`${v.no},${v.date||''},${v.attach||0},"${line.summary}","${line.subject}","${line.detail}",${line.debit},${line.credit}\n`;
+  })
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`记账凭证_${v.no}.csv`;
+  a.click();
+}
+
+//一键下载凭证PNG图片 dom‑to‑image
+async function downloadVoucherPng(vid){
+  const v = voucherBook.find(x=>x.vid===vid);
+  if(!v) return;
+  loadVoucherToEdit(vid);
+  await new Promise(res=>setTimeout(res,400));
+  try{
+    const node = document.getElementById("voucherPrintWrap");
+    const dataUrl = await domtoimage.toPng(node,{quality:0.95,bgcolor:"#ffffff"});
+    const link = document.createElement('a');
+    link.download = `记账凭证_${v.no}.png`;
+    link.href = dataUrl;
+    link.click();
+  }catch(err){
+    alert("图片生成失败，请改用打印凭证另存PNG");
+    console.error(err);
+  }
+}
+
+//单张凭证打印
+function printSingleVoucher(vid){
+  const v = voucherBook.find(x=>x.vid === vid);
+  if(!v) return;
+  loadVoucherToEdit(vid);
+  setTimeout(()=>{printVoucher();},300);
+}
+//批量打印选中凭证
+function batchPrintSelectedVoucher(){
+  const checked = Array.from(document.querySelectorAll(".voucher-check:checked"));
+  if(checked.length===0){alert("请勾选凭证！");return;}
+  alert("批量打印：依次导出，确认后会逐个弹出打印窗口");
+  let vidList = checked.map(el=>Number(el.dataset.vid));
+  vidList.forEach((vid,i)=>{
+    setTimeout(()=>{printSingleVoucher(vid);}, i*1200);
+  })
+}
+
+function loadVoucherToEdit(vid){
+  const v=voucherBook.find(x=>x.vid===vid);if(!v)return;
+  editVid = vid;document.getElementById("editHint").innerHTML = `<span class="edit-mark">🔧正在编辑凭证：${v.no}，保存将覆盖原凭证</span>`;
+  document.getElementById("vDate").value=v.date||'';document.getElementById("vNo").value=v.no;document.getElementById("attachCount").value=v.attach||0;
+  const tb=document.getElementById("vBody");tb.innerHTML='';
+  v.lines.forEach(line=>{
+    addVoucherRow();
+    const tr=tb.lastElementChild;
+    tr.querySelector(".v-sum").value=line.summary;
+    tr.querySelector(".v-subj").value=line.subject;
+    tr.querySelector(".v-detail").value=line.detail;
+    tr.querySelector(".v-debit").value=line.debit||'';
+    tr.querySelector(".v-credit").value=line.credit||'';
+  })
+  calcVoucherSum();document.querySelector('[data-page="voucher"]').click();
+}
+
+function softDelVoucher(vid){
+  if(!confirm("⚠️凭证将移入回收站，仍然可以恢复，确认执行？")) return;
+  const idx = voucherBook.findIndex(x=>x.vid===vid);if(idx===-1)return;
+  const item = voucherBook.splice(idx,1)[0];voucherRecycleBin.push(item);
+  localStorage.setItem("voucherBook",JSON.stringify(voucherBook));localStorage.setItem("voucherRecycleBin",JSON.stringify(voucherRecycleBin));renderVoucherList();
+}
+
+function renderRecycleBin(){
+  let html="<table><tr><th>凭证号</th><th>日期</th><th>分录行数</th><th>借方总额</th><th>贷方总额</th><th>操作</th></tr>";
+  voucherRecycleBin.forEach(v=>{
+    let sumD=0,sumC=0;v.lines.forEach(l=>{sumD+=l.debit;sumC+=l.credit})
+    html+=`<tr>
+    <td>${v.no}</td><td>${v.date||''}</td><td>${v.lines.length}</td>
+    <td>${sumD.toFixed(2)}</td><td>${sumC.toFixed(2)}</td>
+    <td><button class="btn green" onclick="restoreVoucher(${v.vid})">恢复凭证</button>
+    <button class="btn red" onclick="hardDelVoucher(${v.vid})">彻底销毁</button></td>
+    </tr>`
+  })
+  html+="</table>";
+  document.getElementById("recycleList").innerHTML = voucherRecycleBin.length>0 ? html : "<div style='padding:20px;text-align:center;color:#666'>回收站为空</div>";
+}
+function restoreVoucher(vid){
+  const idx = voucherRecycleBin.findIndex(x=>x.vid===vid);if(idx===-1)return;
+  const item = voucherRecycleBin.splice(idx,1)[0];voucherBook.push(item);
+  localStorage.setItem("voucherBook",JSON.stringify(voucherBook));localStorage.setItem("voucherRecycleBin",JSON.stringify(voucherRecycleBin));renderRecycleBin();
+}
+function hardDelVoucher(vid){if(!confirm("⚠️彻底销毁，此凭证将永久丢失，无法恢复！确认？"))return;voucherRecycleBin = voucherRecycleBin.filter(x=>x.vid!==vid);localStorage.setItem("voucherRecycleBin",JSON.stringify(voucherRecycleBin));renderRecycleBin();}
+function emptyRecycleBin(){if(!confirm("⚠️清空回收站！全部凭证将永久销毁，不可恢复！确认？"))return;voucherRecycleBin = [];localStorage.setItem("voucherRecycleBin",JSON.stringify(voucherRecycleBin));renderRecycleBin();}
+
+function clearVoucher(){
+  editVid = null;document.getElementById("editHint").innerHTML = '';
+  if(!confirm("清空当前编辑的凭证？"))return;
+  document.getElementById("vBody").innerHTML="";addVoucherRow();addVoucherRow();calcVoucherSum();autoNextVoucherNo();
+}
+
+function printVoucher(){
+  //强制切到凭证页面，防止打印空白
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll(".page").forEach(x=>x.classList.remove("show"));
+  document.querySelector('[data-page="voucher"]').classList.add("show");
+  document.querySelector('[data-page="voucher"]').classList.add("active");
+  window.print();
+}
+
+function exportVoucherCsv(){
+  if(voucherBook.length===0){alert("暂无凭证数据");return;}
+  let csv="凭证号,凭证日期,附单据,摘要,总账科目,明细科目,借方金额,贷方金额\n";
+  voucherBook.forEach(v=>{v.lines.forEach(line=>{csv+=`${v.no},${v.date||''},${v.attach||0},"${line.summary}","${line.subject}","${line.detail}",${line.debit},${line.credit}\n`})})
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download="全部记账凭证.csv";a.click();
+}
+
+function renderSetting(){
+  document.getElementById("projBox").innerHTML=projList.map((x,i)=>`<div class="set-item">${x} <button class="btn red" onclick="delProj(${i})">删</button></div>`).join("");
+  document.getElementById("cateBox").innerHTML=cateList.map((x,i)=>`<div class="set-item">${x} <button class="btn red" onclick="delCate(${i})">删</button></div>`).join("");
+  document.getElementById("subjBox").innerHTML=subjectList.map((x,i)=>`<div class="set-item">${x} <button class="btn red" onclick="delSubj(${i})">删</button></div>`).join("");
+  document.getElementById("mapCateSel").innerHTML = cateList.map(c=>`<option>${c}</option>`).join("");
+  document.getElementById("mapDebitSubj").innerHTML = subjectList.map(s=>`<option>${s}</option>`).join("");
+  document.getElementById("mapCreditSubj").innerHTML = subjectList.map(s=>`<option>${s}</option>`).join("");
+  let mapHtml = `<table class="mapping-table"><tr><th>收支分类</th><th>借方科目</th><th>贷方科目</th><th>操作</th></tr>`;
+  cateSubjectMapping.forEach((m,i)=>{mapHtml += `<tr><td>${m.cate}</td><td>${m.debit}</td><td>${m.credit}</td><td><button class="btn red" onclick="delMapping(${i})">删除</button></td></tr>`})
+  mapHtml += "</table>";document.getElementById("mappingBox").innerHTML = mapHtml;
+}
+function saveMapping(){localStorage.setItem("cateSubjectMapping",JSON.stringify(cateSubjectMapping));}
+function addMapping(){
+  const cate = document.getElementById("mapCateSel").value;const debit = document.getElementById("mapDebitSubj").value;const credit = document.getElementById("mapCreditSubj").value;
+  const exist = cateSubjectMapping.find(x=>x.cate === cate);
+  if(exist){if(!confirm(`分类【${cate}】已有映射规则，是否覆盖？`)) return;exist.debit = debit;exist.credit = credit;}
+  else{cateSubjectMapping.push({cate,debit,credit});}
+  saveMapping();renderSetting();
+}
+function delMapping(i){if(!confirm("删除该科目映射规则？")) return;cateSubjectMapping.splice(i,1);saveMapping();renderSetting();}
+
+function addProj(){const n=document.getElementById("newProj").value.trim();if(!n)return;projList.push(n);saveSetting();renderSetting()}
+function delProj(i){projList.splice(i,1);saveSetting();renderSetting()}
+function addCate(){const n=document.getElementById("newCate").value.trim();if(!n)return;cateList.push(n);saveSetting();renderSetting()}
+function delCate(i){cateList.splice(i,1);saveSetting();renderSetting()}
+function addSubject(){const n=document.getElementById("newSubj").value.trim();if(!n)return;subjectList.push(n);saveSetting();renderSetting()}
+function delSubj(i){subjectList.splice(i,1);saveSetting();renderSetting()}
+function saveSetting(){
+  localStorage.setItem("projList",JSON.stringify(projList));
+  localStorage.setItem("cateList",JSON.stringify(cateList));
+  localStorage.setItem("subjectList",JSON.stringify(subjectList));
+}
+
+renderSelect();renderStat();renderSetting();autoNextVoucherNo();
+</script>
+</body>
+</html>
